@@ -131,6 +131,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif query.data.startswith("teams_"):
         league_key = query.data.split("_")[1]
         await handle_teams(update, context, league_key)
+    elif query.data.startswith("stats_"):
+        league_key = query.data.split("_")[1]
+        await handle_stats(update, context, league_key)
     elif query.data == "back":
         await show_leagues(update, context)
 
@@ -149,6 +152,9 @@ async def handle_league_selection(update: Update, context: ContextTypes.DEFAULT_
         ],
         [
             InlineKeyboardButton("🏟 Команды лиги", callback_data=f"teams_{league_key}"),
+            InlineKeyboardButton("📈 Статистика лиги", callback_data=f"stats_{league_key}"),
+        ],
+        [
             InlineKeyboardButton("🔙 Назад", callback_data="choose_league"),
         ],
 
@@ -210,6 +216,55 @@ async def handle_teams(update: Update, context: ContextTypes.DEFAULT_TYPE, leagu
         message = "Не удалось получить список команд."
 
     await show_info_with_back_button(update, message, league_key)
+
+
+async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE, league_key: str) -> None:
+    league_info = LEAGUES[league_key]
+    stats = get_league_stats(league_info['id'])
+
+    if stats:
+        message = f"📊 Статистика лиги {league_info['name']}:\n\n"
+        message += f"⚽ Всего голов: {stats['total_goals']}\n"
+        message += f"📊 Средние голы за матч: {stats['avg_goals']}\n"
+        message += f"🏆 Лучший бомбардир: {stats['top_scorer']['name']} - {stats['top_scorer']['goals']} голов\n"
+        message += "\n🔄 Обновлено: " + datetime.now().strftime("%d.%m.%Y %H:%M")
+    else:
+        message = "Не удалось получить статистику лиги."
+
+    keyboard = [
+        [InlineKeyboardButton("🔙 Назад", callback_data=f"league_{league_key}")],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.edit_message_text(
+        text=message,
+        reply_markup=reply_markup
+    )
+
+
+def get_league_stats(league_code: str) -> dict:
+
+    matches = make_api_request(f'competitions/{league_code}/matches?status=FINISHED&limit=50')
+
+    scorers = make_api_request(f'competitions/{league_code}/scorers?limit=1')
+
+    if not matches or not scorers:
+        return None
+
+    total_goals = sum(m['score']['fullTime']['home'] + m['score']['fullTime']['away'] for m in matches['matches'])
+    avg_goals = round(total_goals / len(matches['matches']), 2)
+
+    stats = {
+        'total_goals': total_goals,
+        'avg_goals': avg_goals,
+        'top_scorer': {
+            'name': scorers['scorers'][0]['player']['name'],
+            'goals': scorers['scorers'][0]['goals']
+        },
+
+    }
+
+    return stats
 
 
 async def show_info_with_back_button(update: Update, message: str, league_key: str) -> None:
